@@ -1,5 +1,14 @@
-const { BrowserWindow, app, ipcMain, dialog } = require("electron");
+const {
+  BrowserWindow,
+  app,
+  ipcMain,
+  dialog,
+} = require("electron");
+const fs = require("fs/promises");
 const path = require("path");
+
+// Folder where periodic camera snapshots are stored
+const SNAPSHOT_DIR = path.join(app.getPath("userData"), "snapshots");
 
 let win = null;
 
@@ -17,10 +26,14 @@ function createWindow() {
   win.webContents.openDevTools({ mode: "detach" });
 }
 
+ipcMain.handle("full-screen", () => {
+  win.kiosk = true;
+});
+
 let end_time = null;
 
 ipcMain.handle("start-test", () => {
-  // Set 1-hour countdown limit
+  console.log("IPC: start-test called (frontend finished loading questions)");
   end_time = Date.now() + 60 * 60 * 1000;
   return end_time - Date.now();
 });
@@ -40,4 +53,43 @@ ipcMain.handle("show-rules", async () => {
   return res.response; // 0 = Accept, 1 = Decline
 });
 
-app.whenReady().then(createWindow);
+ipcMain.handle("save-snapshot", async (_event, dataUrl) => {
+  try {
+    await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
+
+    const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    await fs.writeFile(
+      path.join(SNAPSHOT_DIR, `snapshot-${stamp}.jpg`),
+      base64,
+      "base64"
+    );
+    return true;
+  } catch (err) {
+    console.error("Failed to save snapshot:", err);
+    return false;
+  }
+});
+
+// Deletes snapshots left over from previous sessions (runs once at startup)
+async function cleanupOldSnapshots() {
+  try {
+    const files = await fs.readdir(SNAPSHOT_DIR);
+
+    await Promise.all(
+      files
+        .filter((file) => file.endsWith(".jpg"))
+        .map((file) => fs.unlink(path.join(SNAPSHOT_DIR, file)))
+    );
+  } catch (err) {
+    if (err.code !== "ENOENT") {
+      console.error("Snapshot cleanup failed:", err);
+    }
+  }
+}
+
+app.whenReady().then(() => {
+  cleanupOldSnapshots();
+  createWindow();
+});
