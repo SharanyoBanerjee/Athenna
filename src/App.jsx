@@ -4,6 +4,36 @@ import "./App.css";
 // Snapshot monitoring settings
 const SNAPSHOT_INTERVAL_MS = 30_000; // capture every 30 seconds
 const PREVIEW_DURATION_MS = 3_000; // show each capture on screen for 3 seconds
+const EXAM_DURATION_MS = 90 * 60 * 1000; // 1 hour 30 mins
+
+// Fallback questions if backend is starting or offline
+const SAMPLE_QUESTIONS = [
+  {
+    id: 1,
+    question: "Which Electron process is responsible for creating BrowserWindow?",
+    options: ["Renderer Process", "Main Process", "React Process", "Preload Process"],
+  },
+  {
+    id: 2,
+    question: "Which Electron API is commonly used in the renderer to invoke a handler in the main process?",
+    options: ["ipcRenderer.invoke", "BrowserWindow.loadURL", "fs.writeFileSync", "dialog.showMessageBox"],
+  },
+  {
+    id: 3,
+    question: "Why is a preload script commonly used in Electron?",
+    options: ["To style the React application", "To expose controlled APIs safely to the renderer", "To create the Express server", "To replace the main process"],
+  },
+  {
+    id: 4,
+    question: "Which HTTP method is normally used to fetch exam questions?",
+    options: ["GET", "DELETE", "PATCH", "CONNECT"],
+  },
+  {
+    id: 5,
+    question: "What does fs.writeFileSync() do?",
+    options: ["Reads camera frames", "Writes data to a file and waits until it finishes", "Starts the Electron renderer", "Sends an IPC event"],
+  },
+];
 
 // Exam backend server settings
 const API_BASE = "http://localhost:3000";
@@ -13,16 +43,25 @@ function App() {
   const videoRef = useRef(null);
   const previewTimeoutRef = useRef(null);
 
-  const [time, setTime] = useState(0);
-  const [started, setStarted] = useState(false);
+  // Setup permissions state
   const [cameraReady, setCameraReady] = useState(false);
-  const [snapshotPreview, setSnapshotPreview] = useState(null);
+  const [fullscreenReady, setFullscreenReady] = useState(false);
+
+  // Modals state
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showFinishModal, setShowFinishModal] = useState(false);
+  const [closeCountdown, setCloseCountdown] = useState(5);
 
   // Exam state
+  const [time, setTime] = useState(EXAM_DURATION_MS);
+  const [started, setStarted] = useState(false);
+  const [snapshotPreview, setSnapshotPreview] = useState(null);
   const [sessionId, setSessionId] = useState(null);
-  const [questions, setQuestions] = useState([]);
+  const [questions, setQuestions] = useState(SAMPLE_QUESTIONS);
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState({}); // { [questionId]: selectedOptionIndex }
+  const [visited, setVisited] = useState(new Set()); // Set of question IDs
   const [result, setResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [examError, setExamError] = useState(null);
@@ -30,12 +69,27 @@ function App() {
   const submitExamRef = useRef(null);
 
   useEffect(() => {
-    submitExamRef.current = submitExam;
+    submitExamRef.current = handleFinishTest;
   });
+
+  // Automatically mark current question as visited
+  useEffect(() => {
+    if (started && questions.length > 0) {
+      const activeId = questions[current]?.id;
+      if (activeId !== undefined) {
+        setVisited((prev) => {
+          if (prev.has(activeId)) return prev;
+          const next = new Set(prev);
+          next.add(activeId);
+          return next;
+        });
+      }
+    }
+  }, [started, current, questions]);
 
   // Countdown timer synced with Electron main process
   useEffect(() => {
-    if (!started) return;
+    if (!started || showFinishModal) return;
 
     const interval = setInterval(async () => {
       if (window.electronAPI?.getRemainingTime) {
@@ -57,7 +111,7 @@ function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [started]);
+  }, [started, showFinishModal]);
 
   // Periodic proctoring snapshot capture
   useEffect(() => {
@@ -100,6 +154,28 @@ function App() {
     };
   }, [started, cameraReady]);
 
+  // Handle countdown & app closure after finishing exam
+  useEffect(() => {
+    if (!showFinishModal) return;
+
+    const countdownTimer = setInterval(() => {
+      setCloseCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownTimer);
+          if (window.electronAPI?.closeApp) {
+            window.electronAPI.closeApp();
+          } else {
+            window.close();
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(countdownTimer);
+  }, [showFinishModal]);
+
   async function getCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -114,101 +190,126 @@ function App() {
   }
 
   async function getFullscreen() {
-    if (window.electronAPI?.setFullScreen) {
-      await window.electronAPI.setFullScreen();
+    try {
+      if (window.electronAPI?.setFullScreen) {
+        await window.electronAPI.setFullScreen();
+      } else if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
+      setFullscreenReady(true);
+    } catch (err) {
+      console.error("Fullscreen failed:", err);
     }
   }
 
-  async function startTest() {
-    if (window.electronAPI?.showRules) {
-      const res = await window.electronAPI.showRules();
-      const response = typeof res === "object" ? res.response : res;
-      if (response !== 0) return; // Student declined exam instructions
-    }
+  function handleOpenTerms() {
+    if (!cameraReady || !fullscreenReady) return;
+    setShowTermsModal(true);
+  }
 
+  async function confirmStartExam() {
+    setShowTermsModal(false);
     setExamError(null);
+
     try {
       // 1. Initialize session on Express backend
-      const startRes = await fetch(`${API_BASE}/exam/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(STUDENT),
-      });
-
-      const startData = await startRes.json();
-      if (!startRes.ok) throw new Error(startData.message || "Failed to start exam");
+      let activeSessionId = null;
+      try {
+        const startRes = await fetch(`${API_BASE}/exam/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(STUDENT),
+        });
+        const startData = await startRes.json();
+        if (startRes.ok && startData.sessionId) {
+          activeSessionId = startData.sessionId;
+          setSessionId(startData.sessionId);
+        }
+      } catch (err) {
+        console.warn("Backend start session unreachable, using offline mode", err);
+      }
 
       // 2. Fetch MCQ question list
-      const questionsRes = await fetch(`${API_BASE}/exam/mcq`);
-      if (!questionsRes.ok) throw new Error("Failed to load questions");
-      const questionList = await questionsRes.json();
+      try {
+        const questionsRes = await fetch(`${API_BASE}/exam/mcq`);
+        if (questionsRes.ok) {
+          const questionList = await questionsRes.json();
+          if (Array.isArray(questionList) && questionList.length > 0) {
+            setQuestions(questionList);
+          }
+        }
+      } catch (err) {
+        console.warn("Backend questions fetch unreachable, using sample questions", err);
+      }
 
-      // 3. Start timer in Electron Main
-      let remaining = 60 * 60 * 1000;
+      // 3. Start timer in Electron Main (1 hour 30 mins = 90 mins)
+      let remaining = EXAM_DURATION_MS;
       if (window.electronAPI?.startTest) {
         remaining = await window.electronAPI.startTest();
       }
 
-      setSessionId(startData.sessionId);
-      setQuestions(questionList);
       setTime(remaining);
       setStarted(true);
+
+      // Initialize visited with the first question
+      setVisited(new Set([1]));
     } catch (err) {
       console.error("Failed to start exam:", err);
-      setExamError("Could not connect to exam server. Is Backend/server.js running on port 3000?");
+      setExamError("Failed to initialize exam session.");
     }
   }
 
   async function handleSelect(optionIndex) {
     const question = questions[current];
-    if (!question || submitting || result) return;
+    if (!question || submitting || result || showFinishModal) return;
     if (answers[question.id] !== undefined) return; // Answer already recorded
 
-    try {
-      const res = await fetch(`${API_BASE}/exam/answer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          questionId: question.id,
-          selectedAnswer: optionIndex,
-        }),
-      });
+    setAnswers((prev) => ({ ...prev, [question.id]: optionIndex }));
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        console.error("Answer rejected:", data.message);
-        return;
+    // Send answer to backend if connected
+    if (sessionId) {
+      try {
+        await fetch(`${API_BASE}/exam/answer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            questionId: question.id,
+            selectedAnswer: optionIndex,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to record answer on backend:", err);
       }
+    }
 
-      setAnswers((prev) => ({ ...prev, [question.id]: optionIndex }));
-      setCurrent((c) => Math.min(c + 1, questions.length - 1));
-    } catch (err) {
-      console.error("Failed to record answer:", err);
+    if (current < questions.length - 1) {
+      setCurrent((c) => c + 1);
     }
   }
 
-  async function submitExam() {
-    if (!sessionId || submitting || result) return;
+  async function handleFinishTest() {
+    if (submitting || showFinishModal) return;
     setSubmitting(true);
 
     try {
-      const res = await fetch(`${API_BASE}/exam/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setResult(data.result);
-      } else {
-        console.error("Submission failed:", data.message);
+      if (sessionId) {
+        const res = await fetch(`${API_BASE}/exam/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+        const data = await res.json();
+        if (res.ok && data.result) {
+          setResult(data.result);
+        }
       }
     } catch (err) {
       console.error("Failed to submit exam:", err);
     } finally {
       setSubmitting(false);
+      setShowFinishModal(true);
+      setCloseCountdown(5);
     }
   }
 
@@ -226,6 +327,9 @@ function App() {
 
     return `${hours}:${minutes}:${seconds}`;
   }
+
+  const allQuestionsVisited =
+    questions.length > 0 && questions.every((q) => visited.has(q.id));
 
   return (
     <>
@@ -252,76 +356,213 @@ function App() {
         </div>
       )}
 
+      {/* Terms and Conditions Modal */}
+      {showTermsModal && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <span className="modal-icon">📜</span>
+              <h2>Examination Terms & Conditions</h2>
+            </div>
+            <p className="modal-subtitle">
+              Please carefully review the exam guidelines before starting.
+            </p>
+
+            <div className="terms-list">
+              <div className="term-item">
+                <span className="term-number">1</span>
+                <div>
+                  <strong>Continuous Camera Monitoring:</strong> Your webcam will periodically capture verification snapshots throughout the session.
+                </div>
+              </div>
+              <div className="term-item">
+                <span className="term-number">2</span>
+                <div>
+                  <strong>Fullscreen Lock:</strong> Leaving fullscreen mode or switching tabs is strictly monitored and flagged as an irregularity.
+                </div>
+              </div>
+              <div className="term-item">
+                <span className="term-number">3</span>
+                <div>
+                  <strong>Question Completion:</strong> All 5 questions must be visited before the Finish Test option becomes accessible.
+                </div>
+              </div>
+              <div className="term-item">
+                <span className="term-number">4</span>
+                <div>
+                  <strong>Time Limit:</strong> You will have 1 hour 30 minutes (90 minutes) to complete the test.
+                </div>
+              </div>
+              <div className="term-item">
+                <span className="term-number">5</span>
+                <div>
+                  <strong>Auto Submission:</strong> When time expires or when you click Finish Test, your examination will conclude.
+                </div>
+              </div>
+            </div>
+
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+              />
+              <span>I have read, understood, and accept all examination terms and conditions.</span>
+            </label>
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-outline"
+                onClick={() => setShowTermsModal(false)}
+              >
+                Decline & Back
+              </button>
+              <button
+                className="btn btn-dark"
+                disabled={!acceptedTerms}
+                onClick={confirmStartExam}
+              >
+                Accept & Start Exam
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Finish Test Modal */}
+      {showFinishModal && (
+        <div className="modal-overlay">
+          <div className="modal-card finish-modal-card">
+            <div className="finish-icon-wrap">✓</div>
+            <h2 className="finish-title">Exam finished</h2>
+            <p className="finish-desc">
+              Your examination has been completed and recorded successfully.
+            </p>
+            {result && (
+              <div className="finish-stats">
+                <span>Attempted: {result.attempted}</span>
+                <span>Correct: {result.correct}</span>
+                <span>Wrong: {result.wrong}</span>
+              </div>
+            )}
+            <div className="countdown-badge">
+              app closes after {closeCountdown} seconds
+            </div>
+          </div>
+        </div>
+      )}
+
       {started ? (
         <div className="exam-page">
           <div className="exam-container">
-            {result ? (
-              <div className="question-card">
-                <h2>Exam Submitted Successfully</h2>
-                <p>
-                  Attempted: {result.attempted} · Correct: {result.correct} · Wrong: {result.wrong}
-                </p>
+            <div className="exam-header">
+              <div className="exam-title-meta">
+                <h3>
+                  Question {current + 1} of {questions.length}
+                </h3>
+                <span className="timer-badge">
+                  ⏱ Time Left: {formatTimeLeft(time)}
+                </span>
               </div>
-            ) : questions.length === 0 ? (
-              <div className="question-card">
-                <h2>Exam Status</h2>
-                <p>{examError || "Loading exam questions…"}</p>
+
+              <div className="finish-btn-wrapper">
+                <button
+                  className="end-test-btn"
+                  onClick={handleFinishTest}
+                  disabled={!allQuestionsVisited || submitting}
+                  title={
+                    !allQuestionsVisited
+                      ? "Visit all questions to unlock Finish Test"
+                      : "Finish and submit exam"
+                  }
+                >
+                  Finish Test
+                </button>
+                {!allQuestionsVisited && (
+                  <span className="visited-hint">
+                    Visited: {visited.size}/{questions.length}
+                  </span>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="exam-header">
-                  <h3>
-                    Question {current + 1} of {questions.length} — Time Left: {formatTimeLeft(time)}
-                  </h3>
-                  <button
-                    className="end-test-btn"
-                    onClick={submitExam}
-                    disabled={submitting}
-                  >
-                    End Test
-                  </button>
-                </div>
+            </div>
 
-                <div className="question-card">
-                  <h2>Question {current + 1}</h2>
-                  <p>{questions[current].question}</p>
+            {/* Question Navigator Palette */}
+            <div className="question-nav-palette">
+              <span className="palette-label">Question Palette:</span>
+              <div className="palette-pills">
+                {questions.map((q, idx) => {
+                  const isCurrent = current === idx;
+                  const isVisited = visited.has(q.id);
+                  const isAnswered = answers[q.id] !== undefined;
 
-                  {questions[current].options.map((option, optionIndex) => (
-                    <label
-                      key={optionIndex}
-                      className="option-row"
-                      onClick={() => handleSelect(optionIndex)}
-                    >
-                      <input
-                        type="radio"
-                        name={`question-${questions[current].id}`}
-                        checked={answers[questions[current].id] === optionIndex}
-                        readOnly
-                      />
-                      <span>{option}</span>
-                    </label>
-                  ))}
+                  let statusClass = "unvisited";
+                  if (isCurrent) statusClass = "active";
+                  else if (isAnswered) statusClass = "answered";
+                  else if (isVisited) statusClass = "visited";
 
-                  <div className="navigation-buttons">
+                  return (
                     <button
-                      onClick={() => setCurrent((c) => c - 1)}
-                      disabled={current === 0}
+                      key={q.id}
+                      className={`palette-pill ${statusClass}`}
+                      onClick={() => setCurrent(idx)}
                     >
-                      Previous
+                      {idx + 1}
+                      {isAnswered && <span className="pill-check">✓</span>}
                     </button>
-                    {current === questions.length - 1 ? (
-                      <button onClick={submitExam} disabled={submitting}>
-                        Submit Exam
-                      </button>
-                    ) : (
-                      <button onClick={() => setCurrent((c) => c + 1)}>
-                        Next
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
+                  );
+                })}
+              </div>
+              <div className="palette-legend">
+                <span className="legend-item"><span className="legend-dot active" /> Current</span>
+                <span className="legend-item"><span className="legend-dot visited" /> Visited</span>
+                <span className="legend-item"><span className="legend-dot answered" /> Answered</span>
+              </div>
+            </div>
+
+            <div className="question-card">
+              <h2>Question {current + 1} of {questions.length}</h2>
+              <p>{questions[current]?.question}</p>
+
+              {questions[current]?.options.map((option, optionIndex) => (
+                <label
+                  key={optionIndex}
+                  className={`option-row ${
+                    answers[questions[current].id] === optionIndex ? "selected" : ""
+                  }`}
+                  onClick={() => handleSelect(optionIndex)}
+                >
+                  <input
+                    type="radio"
+                    name={`question-${questions[current].id}`}
+                    checked={answers[questions[current].id] === optionIndex}
+                    readOnly
+                  />
+                  <span>{option}</span>
+                </label>
+              ))}
+
+              <div className="navigation-buttons">
+                <button
+                  onClick={() => setCurrent((c) => c - 1)}
+                  disabled={current === 0}
+                >
+                  Previous
+                </button>
+                {current === questions.length - 1 ? (
+                  <button
+                    onClick={handleFinishTest}
+                    disabled={!allQuestionsVisited || submitting}
+                    className="btn-accent-finish"
+                  >
+                    Finish Test
+                  </button>
+                ) : (
+                  <button onClick={() => setCurrent((c) => c + 1)}>
+                    Next
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -338,8 +579,11 @@ function App() {
                 <h3>Configure Camera</h3>
                 <p>Kindly configure Camera to attempt quiz/contests.</p>
                 <div className="action-row">
-                  <button onClick={getCamera} className="btn btn-dark">
-                    {cameraReady ? "Camera Connected" : "Get Camera Access"}
+                  <button
+                    onClick={getCamera}
+                    className={`btn ${cameraReady ? "btn-success" : "btn-dark"}`}
+                  >
+                    {cameraReady ? "✓ Camera Connected" : "Get Camera Access"}
                   </button>
                 </div>
               </div>
@@ -352,8 +596,11 @@ function App() {
               <div className="permission-content">
                 <h3>Switch to full screen</h3>
                 <p>Kindly close all tabs and switch to full screen.</p>
-                <button onClick={getFullscreen} className="btn btn-light-blue">
-                  Give Full Screen Permissions
+                <button
+                  onClick={getFullscreen}
+                  className={`btn ${fullscreenReady ? "btn-success" : "btn-light-blue"}`}
+                >
+                  {fullscreenReady ? "✓ Full Screen Enabled" : "Give Full Screen Permissions"}
                 </button>
               </div>
             </div>
@@ -361,17 +608,23 @@ function App() {
 
           <div className="bottom-actions">
             <button
-              onClick={startTest}
-              className="btn btn-light-blue"
-              disabled={!cameraReady}
+              onClick={handleOpenTerms}
+              className="btn btn-light-blue start-test-btn"
+              disabled={!cameraReady || !fullscreenReady}
             >
-              Go To Test
+              Start Test
             </button>
             <button className="btn btn-outline">Need Help?</button>
           </div>
 
+          {(!cameraReady || !fullscreenReady) && (
+            <p className="permission-hint">
+              * Please enable both Camera and Full Screen permissions to unlock the Start Test button.
+            </p>
+          )}
+
           {examError && <p className="error-text">{examError}</p>}
-          <p className="timer-preview">Time Left : {formatTimeLeft(time)}</p>
+          <p className="timer-preview">Initial Test Duration: {formatTimeLeft(time)}</p>
         </div>
       )}
     </>

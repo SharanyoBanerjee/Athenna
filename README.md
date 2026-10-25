@@ -1,6 +1,28 @@
 # Athena — Secure Exam Proctoring Desktop Application
 
-Athena is a desktop-based examination and proctoring application built with **Electron**, **React (Vite)**, and an **Express (Node.js)** backend. It provides secure computer-based testing features including automated webcam snapshots, full-screen kiosk lock, native OS rule dialogs, and real-time exam session tracking.
+Athena is a desktop-based examination and proctoring application built with **Electron**, **React (Vite)**, and an **Express (Node.js)** backend. It provides secure computer-based testing features including automated webcam snapshots, full-screen kiosk lock, in-app styled examination terms dialog, question visited status tracking, and a timed exam environment with automatic shutdown.
+
+---
+
+## Key Features
+
+1. **Permissions Gating**:
+   - The **Start Test** button remains disabled until both **Camera** access and **Full Screen** permissions are granted by the candidate.
+2. **In-App Styled Terms & Conditions**:
+   - Seamlessly integrated modal matching the application aesthetic. Displays examination guidelines and rules requiring candidate acceptance prior to starting.
+3. **Timed 1h 30m Countdown**:
+   - Countdown timer set to **1 hour 30 minutes** (90 minutes) synchronized with the Electron Main process via IPC.
+4. **Question Visited Status & Navigation Palette**:
+   - Presents 5 sample questions with options.
+   - Interactive question palette tracks questions that are **Current**, **Visited**, or **Answered**.
+   - Questions are automatically marked as visited when navigated or attempted.
+5. **Locked Finish Test Flow**:
+   - The **Finish Test** button is unlocked **only when all questions have been visited**.
+6. **Graceful Completion & Auto-Close**:
+   - On clicking Finish Test, displays an **"Exam finished"** dialog.
+   - Shows the message **"app closes after 5 seconds"** with a live countdown before safely closing the Electron window.
+7. **Proctoring Snapshots**:
+   - Automated periodic webcam snapshots saved to disk in the user data directory with visual cues.
 
 ---
 
@@ -14,16 +36,19 @@ Athena is a desktop-based examination and proctoring application built with **El
 │  │     Main Process      │       │    Preload Script     │  │
 │  │  (electron/main.cjs)  │◄─────►│ (electron/preload.cjs)│  │
 │  │   - Kiosk Window      │  IPC  │   - contextBridge     │  │
-│  │   - Native Dialogs    │       │   - window.electronAPI│  │
+│  │   - 1h30m Exam Timer  │       │   - window.electronAPI│  │
 │  │   - Snapshot Disk I/O │       └───────────┬───────────┘  │
+│  │   - Close App Handler │                   │              │
 │  └───────────────────────┘                   │              │
 │                                              ▼              │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │             Renderer Process (React + Vite)           │  │
 │  │                  (http://localhost:5173)              │  │
-│  │   - Webcam video feed & ImageCapture proctoring       │  │
-│  │   - MCQ Navigation & Question Card UI                 │  │
-│  │   - Timer Countdown synced with Electron              │  │
+│  │   - Permission Verification (Camera & Fullscreen)     │  │
+│  │   - Styled Terms & Conditions Modal Dialog            │  │
+│  │   - MCQ Question Navigation & Visited State Tracking  │  │
+│  │   - Synchronized Timer & Proctoring Snapshots         │  │
+│  │   - Exam Finished Modal & 5s Auto-Close Countdown     │  │
 │  └───────────────────────────┬───────────────────────────┘  │
 └──────────────────────────────┼──────────────────────────────┘
                                │ HTTP REST
@@ -51,20 +76,20 @@ Athenna/
 │   ├── README.md              # Backend API documentation
 │   └── server.js              # Express REST API server (Port 3000)
 ├── electron/
-│   ├── main.cjs               # Electron Main process (Window, IPC, Disk I/O)
+│   ├── main.cjs               # Electron Main process (Window, IPC, Disk I/O, Exit)
 │   └── preload.cjs            # Secure contextBridge API exposed to React
 ├── public/                    # Static frontend assets
 ├── src/
 │   ├── assets/
-│   ├── App.css                # Application styles (split-pane, kiosk UI)
-│   ├── App.jsx                # Core exam UI, timer, camera capture loop
+│   ├── App.css                # Application styles (Permissions, Modals, MCQ, Palette)
+│   ├── App.jsx                # Core exam UI, timer, camera capture, visited logic
 │   ├── index.css              # Global styles & resets
 │   └── main.jsx               # React entry point
 ├── eslint.config.js           # ESLint configuration
 ├── index.html                 # Vite HTML entry
 ├── package.json               # Frontend & Electron dependencies/scripts
 ├── vite.config.js             # Vite configuration with React plugin
-└── README.md                  # This documentation
+└── README.md                  # Comprehensive documentation
 ```
 
 ---
@@ -93,11 +118,12 @@ This concurrently boots:
 
 | Channel (`invoke`) | Sender | Purpose | Return Value |
 |---|---|---|---|
-| `full-screen` | Renderer | Sets Electron window to kiosk lock mode | `void` |
-| `start-test` | Renderer | Initializes countdown timer timestamp in Main | `number` (remaining ms) |
+| `full-screen` | Renderer | Sets Electron window to kiosk lock mode | `boolean` |
+| `start-test` | Renderer | Initializes 1h 30m countdown timer in Main | `number` (remaining ms) |
 | `get-time` | Renderer | Queries remaining exam time | `number` (remaining ms) |
-| `show-rules` | Renderer | Displays native OS dialog with rules | `number` (0: Accept, 1: Decline) |
+| `show-rules` | Renderer | Displays native OS dialog with rules (fallback) | `number` (0: Accept, 1: Decline) |
 | `save-snapshot` | Renderer | Writes base64 JPEG snapshot to disk | `boolean` (success/failure) |
+| `close-app` | Renderer | Gracefully quits the Electron desktop application | `void` |
 
 ---
 

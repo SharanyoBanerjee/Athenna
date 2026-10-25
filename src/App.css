@@ -36,16 +36,16 @@ body {
 }
 
 .header-section h1 {
-  font-size: 20px;
-  font-weight: 500;
+  font-size: 22px;
+  font-weight: 600;
   color: #242424;
   margin-bottom: 6px;
 }
 
 .header-section p {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 400;
-  color: #333333;
+  color: #555555;
 }
 
 /* =========================
@@ -66,7 +66,7 @@ body {
   display: grid;
   grid-template-columns: 42px 1fr;
   column-gap: 26px;
-  padding: 44px 48px;
+  padding: 38px 48px;
 }
 
 .permission-icon {
@@ -85,16 +85,16 @@ body {
 }
 
 .permission-content h3 {
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 600;
   color: #2b2b2b;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .permission-content p {
-  font-size: 15px;
+  font-size: 14px;
   color: #666666;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   line-height: 1.5;
 }
 
@@ -106,7 +106,7 @@ body {
 }
 
 /* =========================
-   Buttons
+   Buttons & Actions
 ========================= */
 
 .btn {
@@ -116,7 +116,11 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .btn:active {
@@ -124,8 +128,9 @@ body {
 }
 
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .btn-dark {
@@ -146,6 +151,11 @@ body {
   background: #6ca8df;
 }
 
+.btn-success {
+  background: #2e7d32;
+  color: white;
+}
+
 .btn-outline {
   background: white;
   border: 1px solid #d9d6d1;
@@ -154,6 +164,24 @@ body {
 
 .btn-outline:hover {
   background: #faf9f7;
+}
+
+.bottom-actions {
+  width: 100%;
+  max-width: 920px;
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  justify-content: flex-start;
+}
+
+.permission-hint {
+  width: 100%;
+  max-width: 920px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: #7a6e60;
+  font-style: italic;
 }
 
 .error-text {
@@ -166,23 +194,14 @@ body {
 }
 
 .timer-preview {
-  margin-top: 14px;
+  margin-top: 16px;
   font-size: 14px;
   font-weight: 500;
-  color: #555555;
-}
-
-.bottom-actions {
-  width: 100%;
-  max-width: 920px;
-  display: flex;
-  gap: 12px;
-  margin-top: 18px;
-  justify-content: flex-start;
+  color: #666666;
 }
 
 /* =========================
-   Camera Feed & Indicators
+   Camera Feed & Monitoring
 ========================= */
 
 .video-preview {
@@ -195,6 +214,7 @@ body {
   border-radius: 8px;
   background: #111111;
   z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .hidden-video {
@@ -272,14 +292,202 @@ body {
 }
 
 /* =========================
-   Exam Screen & MCQ Layout
+   Custom Modal (Terms & Finish)
+========================= */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 25, 34, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  animation: modal-fade-in 0.2s ease-out;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 600px;
+  background: #ffffff;
+  border: 1px solid #e7e4df;
+  border-radius: 14px;
+  padding: 32px 36px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
+  animation: modal-scale-in 0.2s ease-out;
+}
+
+@keyframes modal-scale-in {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.modal-icon {
+  font-size: 26px;
+}
+
+.modal-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #242424;
+}
+
+.modal-subtitle {
+  font-size: 14px;
+  color: #666666;
+  margin-bottom: 20px;
+}
+
+.terms-list {
+  background: #faf9f7;
+  border: 1px solid #ebe9e5;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.term-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #333333;
+}
+
+.term-number {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #263c53;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  cursor: pointer;
+  font-size: 13.5px;
+  color: #333333;
+  user-select: none;
+}
+
+.checkbox-row input {
+  width: 17px;
+  height: 17px;
+  accent-color: #263c53;
+  cursor: pointer;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* =========================
+   Finish Dialog Card
+========================= */
+
+.finish-modal-card {
+  text-align: center;
+  max-width: 480px;
+  padding: 40px 36px;
+}
+
+.finish-icon-wrap {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18px auto;
+  font-weight: bold;
+}
+
+.finish-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #242424;
+  margin-bottom: 10px;
+}
+
+.finish-desc {
+  font-size: 15px;
+  color: #555555;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.finish-stats {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px;
+  background: #f7f6f4;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #333333;
+  margin-bottom: 24px;
+}
+
+.countdown-badge {
+  display: inline-block;
+  padding: 10px 20px;
+  background: #263c53;
+  color: white;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  animation: pulse-countdown 1s infinite alternate ease-in-out;
+}
+
+@keyframes pulse-countdown {
+  from { opacity: 0.9; transform: scale(0.99); }
+  to { opacity: 1; transform: scale(1.02); }
+}
+
+/* =========================
+   Exam Page & Question Nav
 ========================= */
 
 .exam-page {
   width: 100%;
   min-height: 100vh;
   background: #f5f4f2;
-  padding: 48px 40px;
+  padding: 40px;
 }
 
 .exam-container {
@@ -292,17 +500,40 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
-.exam-header h3 {
-  font-size: 16px;
-  font-weight: 500;
-  color: #333333;
+.exam-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.exam-title-meta h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #242424;
+}
+
+.timer-badge {
+  background: #ffffff;
+  border: 1px solid #d9d6d1;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #263c53;
+}
+
+.finish-btn-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 .end-test-btn {
-  padding: 11px 20px;
+  padding: 11px 22px;
   border: none;
   border-radius: 8px;
   background: #263c53;
@@ -310,8 +541,131 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
+.end-test-btn:hover:not(:disabled) {
+  background: #1f3246;
+}
+
+.end-test-btn:disabled {
+  background: #cbd3da;
+  color: #718096;
+  cursor: not-allowed;
+}
+
+.visited-hint {
+  font-size: 11.5px;
+  color: #718096;
+  font-weight: 500;
+}
+
+/* Question Navigator Palette */
+.question-nav-palette {
+  background: #ffffff;
+  border: 1px solid #e7e4df;
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.palette-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #444444;
+}
+
+.palette-pills {
+  display: flex;
+  gap: 8px;
+}
+
+.palette-pill {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #d9d6d1;
+  background: #fdfdfd;
+  font-size: 13px;
+  font-weight: 600;
+  color: #444444;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.palette-pill:hover {
+  border-color: #263c53;
+}
+
+.palette-pill.visited {
+  background: #eef4f9;
+  border-color: #b0cbe2;
+  color: #1b4b72;
+}
+
+.palette-pill.answered {
+  background: #263c53;
+  border-color: #263c53;
+  color: #ffffff;
+}
+
+.palette-pill.active {
+  box-shadow: 0 0 0 2px #7eb5e9;
+  border-color: #7eb5e9;
+}
+
+.pill-check {
+  font-size: 10px;
+  position: absolute;
+  top: 1px;
+  right: 3px;
+}
+
+.palette-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: #666666;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+}
+
+.legend-dot.active {
+  border-color: #7eb5e9;
+  background: #7eb5e9;
+}
+
+.legend-dot.visited {
+  background: #eef4f9;
+  border-color: #b0cbe2;
+}
+
+.legend-dot.answered {
+  background: #263c53;
+  border-color: #263c53;
+}
+
+/* Question Card */
 .question-card {
   background: #ffffff;
   border: 1px solid #e7e4df;
@@ -328,10 +682,11 @@ body {
 }
 
 .question-card > p {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 600;
   color: #292929;
   margin-bottom: 26px;
+  line-height: 1.45;
 }
 
 .option-row {
@@ -339,22 +694,34 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  margin-bottom: 10px;
+  padding: 14px 18px;
+  margin-bottom: 12px;
   border: 1px solid #e6e3df;
   border-radius: 8px;
   background: white;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .option-row:hover {
   background: #faf9f7;
+  border-color: #d1cdc7;
+}
+
+.option-row.selected {
+  background: #f0f6fa;
+  border-color: #7eb5e9;
 }
 
 .option-row input {
   width: 17px;
   height: 17px;
   accent-color: #263c53;
+}
+
+.option-row span {
+  font-size: 14.5px;
+  color: #333333;
 }
 
 .navigation-buttons {
@@ -375,6 +742,14 @@ body {
 }
 
 .navigation-buttons button:disabled {
-  background: #c2c7cd;
+  background: #cbd3da;
   cursor: not-allowed;
+}
+
+.btn-accent-finish {
+  background: #2e7d32 !important;
+}
+
+.btn-accent-finish:disabled {
+  background: #cbd3da !important;
 }

@@ -27,19 +27,26 @@ function createWindow() {
 }
 
 ipcMain.handle("full-screen", () => {
-  win.kiosk = true;
+  if (win) {
+    win.kiosk = true;
+  }
+  return true;
 });
 
 let end_time = null;
 
 ipcMain.handle("start-test", () => {
-  console.log("IPC: start-test called (frontend finished loading questions)");
-  end_time = Date.now() + 60 * 60 * 1000;
+  console.log("IPC: start-test called (exam started)");
+  end_time = Date.now() + 90 * 60 * 1000;
   return end_time - Date.now();
 });
 
 ipcMain.handle("get-time", () => {
   return end_time ? Math.max(0, end_time - Date.now()) : 0;
+});
+
+ipcMain.handle("close-app", () => {
+  app.quit();
 });
 
 ipcMain.handle("show-rules", async () => {
